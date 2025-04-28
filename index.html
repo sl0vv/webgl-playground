@@ -21,12 +21,23 @@
         
         varying vec3 vNormal;
         varying vec3 vPosition;
+
+        // PS1-style vertex snapping parameters
+        const float snapFactor = 50.0; // Increased from 20.0 to reduce jitter
         
         void main() {
             // For flat shading, just pass the normal directly without any interpolation
             vNormal = uNormalMatrix * aVertexNormal;
             vPosition = vec3(uModelViewMatrix * vec4(aVertexPosition, 1.0));
-            gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aVertexPosition, 1.0);
+            
+            vec4 projectedPosition = uProjectionMatrix * uModelViewMatrix * vec4(aVertexPosition, 1.0);
+
+            // Apply vertex snapping in screen space
+            projectedPosition.xyz /= projectedPosition.w; // Perspective divide
+            projectedPosition.xy = floor(projectedPosition.xy * snapFactor) / snapFactor; // Snap X and Y
+            projectedPosition.xyz *= projectedPosition.w; // Multiply back by W
+
+            gl_Position = projectedPosition;
         }
     </script>
 
@@ -251,7 +262,7 @@
         }
 
         // Create buffers
-        const sphere = createSphere(1.0, 12);
+        const sphere = createSphere(1.0, 10); // Lowered segments from 12 to 6
         const positionBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(sphere.positions), gl.STATIC_DRAW);
