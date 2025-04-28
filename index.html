@@ -54,6 +54,15 @@
         }
     </script>
 
+    <!-- Wireframe Fragment Shader -->
+    <script id="wireframeFragmentShader" type="x-shader/x-fragment">
+        precision mediump float;
+        
+        void main() {
+            gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); // Black color for wireframe
+        }
+    </script>
+
     <script>
         // WebGL context
         const canvas = document.getElementById('glCanvas');
@@ -90,19 +99,35 @@
         // Create shader program
         const vertexShader = compileShader(document.getElementById('vertexShader').text, gl.VERTEX_SHADER);
         const fragmentShader = compileShader(document.getElementById('fragmentShader').text, gl.FRAGMENT_SHADER);
+        const wireframeFragmentShader = compileShader(document.getElementById('wireframeFragmentShader').text, gl.FRAGMENT_SHADER);
+        
         const shaderProgram = gl.createProgram();
         gl.attachShader(shaderProgram, vertexShader);
         gl.attachShader(shaderProgram, fragmentShader);
         gl.linkProgram(shaderProgram);
 
+        const wireframeProgram = gl.createProgram();
+        gl.attachShader(wireframeProgram, vertexShader);
+        gl.attachShader(wireframeProgram, wireframeFragmentShader);
+        gl.linkProgram(wireframeProgram);
+
         if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
             console.error('Shader program linking error:', gl.getProgramInfoLog(shaderProgram));
         }
 
-        // Get attribute and uniform locations
+        if (!gl.getProgramParameter(wireframeProgram, gl.LINK_STATUS)) {
+            console.error('Wireframe program linking error:', gl.getProgramInfoLog(wireframeProgram));
+        }
+
+        // Get attribute and uniform locations for both programs
         const attribLocations = {
             vertexPosition: gl.getAttribLocation(shaderProgram, 'aVertexPosition'),
             vertexNormal: gl.getAttribLocation(shaderProgram, 'aVertexNormal')
+        };
+
+        const wireframeAttribLocations = {
+            vertexPosition: gl.getAttribLocation(wireframeProgram, 'aVertexPosition'),
+            vertexNormal: gl.getAttribLocation(wireframeProgram, 'aVertexNormal')
         };
 
         const uniformLocations = {
@@ -112,6 +137,12 @@
             lightDirection: gl.getUniformLocation(shaderProgram, 'uLightDirection'),
             lightColor: gl.getUniformLocation(shaderProgram, 'uLightColor'),
             ambientColor: gl.getUniformLocation(shaderProgram, 'uAmbientColor')
+        };
+
+        const wireframeUniformLocations = {
+            projectionMatrix: gl.getUniformLocation(wireframeProgram, 'uProjectionMatrix'),
+            modelViewMatrix: gl.getUniformLocation(wireframeProgram, 'uModelViewMatrix'),
+            normalMatrix: gl.getUniformLocation(wireframeProgram, 'uNormalMatrix')
         };
 
         // Create sphere geometry
@@ -153,7 +184,7 @@
         }
 
         // Create buffers
-        const sphere = createSphere(1.0, 32);
+        const sphere = createSphere(1.0, 12);
         const positionBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(sphere.positions), gl.STATIC_DRAW);
@@ -261,14 +292,14 @@
             mat4.rotateY(modelViewMatrix, modelViewMatrix, angle);
             mat3.fromMat4(normalMatrix, modelViewMatrix);
 
-            // Use shader program
+            // Draw solid sphere
             gl.useProgram(shaderProgram);
 
             // Set uniforms
             gl.uniformMatrix4fv(uniformLocations.projectionMatrix, false, projectionMatrix);
             gl.uniformMatrix4fv(uniformLocations.modelViewMatrix, false, modelViewMatrix);
             gl.uniformMatrix3fv(uniformLocations.normalMatrix, false, normalMatrix);
-            gl.uniform3fv(uniformLocations.lightDirection, [1.0, 1.0, 1.0]); // Top-left light direction
+            gl.uniform3fv(uniformLocations.lightDirection, [1.0, 1.0, 1.0]);
             gl.uniform3fv(uniformLocations.lightColor, [1.0, 1.0, 1.0]);
             gl.uniform3fv(uniformLocations.ambientColor, [0.2, 0.2, 0.2]);
 
@@ -281,9 +312,37 @@
             gl.vertexAttribPointer(attribLocations.vertexNormal, 3, gl.FLOAT, false, 0, 0);
             gl.enableVertexAttribArray(attribLocations.vertexNormal);
 
-            // Draw sphere
+            // Draw solid sphere
             gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
             gl.drawElements(gl.TRIANGLES, sphere.indices.length, gl.UNSIGNED_SHORT, 0);
+
+            // Draw wireframe
+            gl.useProgram(wireframeProgram);
+
+            // Set uniforms for wireframe
+            gl.uniformMatrix4fv(wireframeUniformLocations.projectionMatrix, false, projectionMatrix);
+            gl.uniformMatrix4fv(wireframeUniformLocations.modelViewMatrix, false, modelViewMatrix);
+            gl.uniformMatrix3fv(wireframeUniformLocations.normalMatrix, false, normalMatrix);
+
+            // Set up attributes for wireframe
+            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+            gl.vertexAttribPointer(wireframeAttribLocations.vertexPosition, 3, gl.FLOAT, false, 0, 0);
+            gl.enableVertexAttribArray(wireframeAttribLocations.vertexPosition);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer);
+            gl.vertexAttribPointer(wireframeAttribLocations.vertexNormal, 3, gl.FLOAT, false, 0, 0);
+            gl.enableVertexAttribArray(wireframeAttribLocations.vertexNormal);
+
+            // Enable polygon offset to prevent z-fighting
+            gl.enable(gl.POLYGON_OFFSET_FILL);
+            gl.polygonOffset(1.0, 1.0);
+
+            // Draw wireframe
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+            gl.drawElements(gl.LINE_STRIP, sphere.indices.length, gl.UNSIGNED_SHORT, 0);
+
+            // Disable polygon offset
+            gl.disable(gl.POLYGON_OFFSET_FILL);
 
             requestAnimationFrame(render);
         }
