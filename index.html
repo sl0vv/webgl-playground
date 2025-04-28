@@ -4,79 +4,81 @@
     <title>WebGL Sphere Demo</title>
     <style>
         body { margin: 0; overflow: hidden; }
-        canvas { width: 100vw; height: 100vh; display: block; }
+        canvas { display: block; }
     </style>
 </head>
 <body>
     <canvas id="glCanvas"></canvas>
+
+    <!-- Vertex Shader -->
+    <script id="vertexShader" type="x-shader/x-vertex">
+        attribute vec3 aVertexPosition;
+        attribute vec3 aVertexNormal;
+        
+        uniform mat4 uModelViewMatrix;
+        uniform mat4 uProjectionMatrix;
+        uniform mat3 uNormalMatrix;
+        
+        varying vec3 vNormal;
+        varying vec3 vPosition;
+        
+        void main() {
+            vNormal = uNormalMatrix * aVertexNormal;
+            vPosition = vec3(uModelViewMatrix * vec4(aVertexPosition, 1.0));
+            gl_Position = uProjectionMatrix * uModelViewMatrix * vec4(aVertexPosition, 1.0);
+        }
+    </script>
+
+    <!-- Fragment Shader -->
+    <script id="fragmentShader" type="x-shader/x-fragment">
+        precision mediump float;
+        
+        varying vec3 vNormal;
+        varying vec3 vPosition;
+        
+        uniform vec3 uLightDirection;
+        uniform vec3 uLightColor;
+        uniform vec3 uAmbientColor;
+        
+        void main() {
+            vec3 normal = normalize(vNormal);
+            vec3 lightDir = normalize(uLightDirection);
+            
+            float diffuse = max(dot(normal, lightDir), 0.0);
+            vec3 color = vec3(0.0, 1.0, 0.0); // Green color for sphere
+            
+            vec3 ambient = uAmbientColor * color;
+            vec3 diffuseColor = uLightColor * color * diffuse;
+            
+            gl_FragColor = vec4(ambient + diffuseColor, 1.0);
+        }
+    </script>
+
     <script>
-        // Vertex shader program
-        const vsSource = `
-            attribute vec4 aVertexPosition;
-            attribute vec3 aVertexNormal;
-            
-            uniform mat4 uModelViewMatrix;
-            uniform mat4 uProjectionMatrix;
-            uniform mat4 uNormalMatrix;
-            
-            varying vec3 vNormal;
-            varying vec3 vPosition;
-            
-            void main() {
-                gl_Position = uProjectionMatrix * uModelViewMatrix * aVertexPosition;
-                vNormal = vec3(uNormalMatrix * vec4(aVertexNormal, 0.0));
-                vPosition = vec3(uModelViewMatrix * aVertexPosition);
-            }
-        `;
-
-        // Fragment shader program
-        const fsSource = `
-            precision highp float;
-            
-            varying vec3 vNormal;
-            varying vec3 vPosition;
-            
-            void main() {
-                vec3 lightPosition = vec3(1.0, 1.0, 1.0);
-                vec3 lightColor = vec3(1.0, 1.0, 1.0);
-                
-                vec3 normal = normalize(vNormal);
-                vec3 lightDir = normalize(lightPosition - vPosition);
-                
-                float diff = max(dot(normal, lightDir), 0.0);
-                vec3 diffuse = diff * lightColor;
-                
-                vec3 baseColor = vec3(0.0, 1.0, 0.0); // Green color
-                vec3 finalColor = baseColor * (diffuse + 0.2); // Add ambient light
-                
-                gl_FragColor = vec4(finalColor, 1.0);
-            }
-        `;
-
-        // Initialize WebGL
+        // WebGL context
         const canvas = document.getElementById('glCanvas');
         const gl = canvas.getContext('webgl');
-
+        
         if (!gl) {
-            alert('Unable to initialize WebGL. Your browser may not support it.');
+            alert('WebGL not supported');
             throw new Error('WebGL not supported');
         }
 
         // Set canvas size
         function resizeCanvas() {
-            canvas.width = canvas.clientWidth;
-            canvas.height = canvas.clientHeight;
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
             gl.viewport(0, 0, canvas.width, canvas.height);
         }
         resizeCanvas();
         window.addEventListener('resize', resizeCanvas);
 
-        // Compile shader
+        // Shader compilation
         function compileShader(source, type) {
             const shader = gl.createShader(type);
             gl.shaderSource(shader, source);
             gl.compileShader(shader);
-
+            
             if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
                 console.error('Shader compilation error:', gl.getShaderInfoLog(shader));
                 gl.deleteShader(shader);
@@ -86,8 +88,8 @@
         }
 
         // Create shader program
-        const vertexShader = compileShader(vsSource, gl.VERTEX_SHADER);
-        const fragmentShader = compileShader(fsSource, gl.FRAGMENT_SHADER);
+        const vertexShader = compileShader(document.getElementById('vertexShader').text, gl.VERTEX_SHADER);
+        const fragmentShader = compileShader(document.getElementById('fragmentShader').text, gl.FRAGMENT_SHADER);
         const shaderProgram = gl.createProgram();
         gl.attachShader(shaderProgram, vertexShader);
         gl.attachShader(shaderProgram, fragmentShader);
@@ -95,21 +97,21 @@
 
         if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
             console.error('Shader program linking error:', gl.getProgramInfoLog(shaderProgram));
-            throw new Error('Unable to initialize shader program');
         }
 
         // Get attribute and uniform locations
-        const programInfo = {
-            program: shaderProgram,
-            attribLocations: {
-                vertexPosition: gl.getAttribLocation(shaderProgram, 'aVertexPosition'),
-                vertexNormal: gl.getAttribLocation(shaderProgram, 'aVertexNormal'),
-            },
-            uniformLocations: {
-                projectionMatrix: gl.getUniformLocation(shaderProgram, 'uProjectionMatrix'),
-                modelViewMatrix: gl.getUniformLocation(shaderProgram, 'uModelViewMatrix'),
-                normalMatrix: gl.getUniformLocation(shaderProgram, 'uNormalMatrix'),
-            },
+        const attribLocations = {
+            vertexPosition: gl.getAttribLocation(shaderProgram, 'aVertexPosition'),
+            vertexNormal: gl.getAttribLocation(shaderProgram, 'aVertexNormal')
+        };
+
+        const uniformLocations = {
+            projectionMatrix: gl.getUniformLocation(shaderProgram, 'uProjectionMatrix'),
+            modelViewMatrix: gl.getUniformLocation(shaderProgram, 'uModelViewMatrix'),
+            normalMatrix: gl.getUniformLocation(shaderProgram, 'uNormalMatrix'),
+            lightDirection: gl.getUniformLocation(shaderProgram, 'uLightDirection'),
+            lightColor: gl.getUniformLocation(shaderProgram, 'uLightColor'),
+            ambientColor: gl.getUniformLocation(shaderProgram, 'uAmbientColor')
         };
 
         // Create sphere geometry
@@ -147,120 +149,150 @@
                 }
             }
 
-            return {
-                positions: new Float32Array(positions),
-                normals: new Float32Array(normals),
-                indices: new Uint16Array(indices),
-            };
+            return { positions, normals, indices };
         }
-
-        const sphere = createSphere(1.0, 32);
 
         // Create buffers
-        const buffers = {
-            position: gl.createBuffer(),
-            normal: gl.createBuffer(),
-            indices: gl.createBuffer(),
+        const sphere = createSphere(1.0, 32);
+        const positionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(sphere.positions), gl.STATIC_DRAW);
+
+        const normalBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(sphere.normals), gl.STATIC_DRAW);
+
+        const indexBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(sphere.indices), gl.STATIC_DRAW);
+
+        // Matrix operations
+        const mat4 = {
+            create: () => new Float32Array(16),
+            identity: (out) => {
+                out[0] = 1; out[1] = 0; out[2] = 0; out[3] = 0;
+                out[4] = 0; out[5] = 1; out[6] = 0; out[7] = 0;
+                out[8] = 0; out[9] = 0; out[10] = 1; out[11] = 0;
+                out[12] = 0; out[13] = 0; out[14] = 0; out[15] = 1;
+                return out;
+            },
+            perspective: (out, fovy, aspect, near, far) => {
+                const f = 1.0 / Math.tan(fovy / 2);
+                out[0] = f / aspect;
+                out[1] = 0;
+                out[2] = 0;
+                out[3] = 0;
+                out[4] = 0;
+                out[5] = f;
+                out[6] = 0;
+                out[7] = 0;
+                out[8] = 0;
+                out[9] = 0;
+                out[10] = (far + near) / (near - far);
+                out[11] = -1;
+                out[12] = 0;
+                out[13] = 0;
+                out[14] = (2 * far * near) / (near - far);
+                out[15] = 0;
+                return out;
+            },
+            translate: (out, a, v) => {
+                const x = v[0], y = v[1], z = v[2];
+                out[0] = a[0]; out[1] = a[1]; out[2] = a[2]; out[3] = a[3];
+                out[4] = a[4]; out[5] = a[5]; out[6] = a[6]; out[7] = a[7];
+                out[8] = a[8]; out[9] = a[9]; out[10] = a[10]; out[11] = a[11];
+                out[12] = a[0] * x + a[4] * y + a[8] * z + a[12];
+                out[13] = a[1] * x + a[5] * y + a[9] * z + a[13];
+                out[14] = a[2] * x + a[6] * y + a[10] * z + a[14];
+                out[15] = a[3] * x + a[7] * y + a[11] * z + a[15];
+                return out;
+            },
+            rotateY: (out, a, rad) => {
+                const s = Math.sin(rad);
+                const c = Math.cos(rad);
+                const a00 = a[0], a01 = a[1], a02 = a[2], a03 = a[3];
+                const a20 = a[8], a21 = a[9], a22 = a[10], a23 = a[11];
+                out[0] = a00 * c - a20 * s;
+                out[1] = a01 * c - a21 * s;
+                out[2] = a02 * c - a22 * s;
+                out[3] = a03 * c - a23 * s;
+                out[8] = a00 * s + a20 * c;
+                out[9] = a01 * s + a21 * c;
+                out[10] = a02 * s + a22 * c;
+                out[11] = a03 * s + a23 * c;
+                return out;
+            }
         };
 
-        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.position);
-        gl.bufferData(gl.ARRAY_BUFFER, sphere.positions, gl.STATIC_DRAW);
+        const mat3 = {
+            create: () => new Float32Array(9),
+            fromMat4: (out, a) => {
+                out[0] = a[0]; out[1] = a[1]; out[2] = a[2];
+                out[3] = a[4]; out[4] = a[5]; out[5] = a[6];
+                out[6] = a[8]; out[7] = a[9]; out[8] = a[10];
+                return out;
+            }
+        };
 
-        gl.bindBuffer(gl.ARRAY_BUFFER, buffers.normal);
-        gl.bufferData(gl.ARRAY_BUFFER, sphere.normals, gl.STATIC_DRAW);
-
-        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffers.indices);
-        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, sphere.indices, gl.STATIC_DRAW);
+        // Matrices
+        const projectionMatrix = mat4.create();
+        const modelViewMatrix = mat4.create();
+        const normalMatrix = mat3.create();
 
         // Animation variables
-        let rotationAngle = 0;
+        let angle = 0;
+        const cameraDistance = 3.0;
         const rotationSpeed = 10 * Math.PI / 180; // 10 degrees per second
 
-        // Draw scene
-        function drawScene(timestamp) {
-            gl.clearColor(0.0, 0.0, 0.0, 1.0);
-            gl.clearDepth(1.0);
-            gl.enable(gl.DEPTH_TEST);
-            gl.depthFunc(gl.LEQUAL);
+        // Render function
+        function render(timestamp) {
+            gl.clearColor(0.0, 0.0, 1.0, 1.0); // Blue background
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-            const fieldOfView = 45 * Math.PI / 180;
-            const aspect = gl.canvas.clientWidth / gl.canvas.clientHeight;
-            const zNear = 0.1;
-            const zFar = 100.0;
-            const projectionMatrix = mat4.create();
-            mat4.perspective(projectionMatrix, fieldOfView, aspect, zNear, zFar);
+            // Update camera position
+            angle += rotationSpeed / 60; // Assuming 60 FPS
+            const cameraX = Math.sin(angle) * cameraDistance;
+            const cameraZ = Math.cos(angle) * cameraDistance;
 
-            const modelViewMatrix = mat4.create();
-            mat4.translate(modelViewMatrix, modelViewMatrix, [0.0, 0.0, -6.0]);
-            
-            // Update rotation
-            rotationAngle += rotationSpeed * (1/60); // Assuming 60fps
-            mat4.rotateY(modelViewMatrix, modelViewMatrix, rotationAngle);
+            // Set up matrices
+            mat4.perspective(projectionMatrix, 45 * Math.PI / 180, canvas.width / canvas.height, 0.1, 100.0);
+            mat4.identity(modelViewMatrix);
+            mat4.translate(modelViewMatrix, modelViewMatrix, [0, 0, -cameraDistance]);
+            mat4.rotateY(modelViewMatrix, modelViewMatrix, angle);
+            mat3.fromMat4(normalMatrix, modelViewMatrix);
 
-            const normalMatrix = mat4.create();
-            mat4.invert(normalMatrix, modelViewMatrix);
-            mat4.transpose(normalMatrix, normalMatrix);
-
-            // Set shader program
-            gl.useProgram(programInfo.program);
+            // Use shader program
+            gl.useProgram(shaderProgram);
 
             // Set uniforms
-            gl.uniformMatrix4fv(
-                programInfo.uniformLocations.projectionMatrix,
-                false,
-                projectionMatrix
-            );
-            gl.uniformMatrix4fv(
-                programInfo.uniformLocations.modelViewMatrix,
-                false,
-                modelViewMatrix
-            );
-            gl.uniformMatrix4fv(
-                programInfo.uniformLocations.normalMatrix,
-                false,
-                normalMatrix
-            );
+            gl.uniformMatrix4fv(uniformLocations.projectionMatrix, false, projectionMatrix);
+            gl.uniformMatrix4fv(uniformLocations.modelViewMatrix, false, modelViewMatrix);
+            gl.uniformMatrix3fv(uniformLocations.normalMatrix, false, normalMatrix);
+            gl.uniform3fv(uniformLocations.lightDirection, [1.0, 1.0, 1.0]); // Top-left light direction
+            gl.uniform3fv(uniformLocations.lightColor, [1.0, 1.0, 1.0]);
+            gl.uniform3fv(uniformLocations.ambientColor, [0.2, 0.2, 0.2]);
 
-            // Set position attribute
-            gl.bindBuffer(gl.ARRAY_BUFFER, buffers.position);
-            gl.vertexAttribPointer(
-                programInfo.attribLocations.vertexPosition,
-                3,
-                gl.FLOAT,
-                false,
-                0,
-                0
-            );
-            gl.enableVertexAttribArray(programInfo.attribLocations.vertexPosition);
+            // Set up attributes
+            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+            gl.vertexAttribPointer(attribLocations.vertexPosition, 3, gl.FLOAT, false, 0, 0);
+            gl.enableVertexAttribArray(attribLocations.vertexPosition);
 
-            // Set normal attribute
-            gl.bindBuffer(gl.ARRAY_BUFFER, buffers.normal);
-            gl.vertexAttribPointer(
-                programInfo.attribLocations.vertexNormal,
-                3,
-                gl.FLOAT,
-                false,
-                0,
-                0
-            );
-            gl.enableVertexAttribArray(programInfo.attribLocations.vertexNormal);
+            gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer);
+            gl.vertexAttribPointer(attribLocations.vertexNormal, 3, gl.FLOAT, false, 0, 0);
+            gl.enableVertexAttribArray(attribLocations.vertexNormal);
 
-            // Draw
-            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buffers.indices);
+            // Draw sphere
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
             gl.drawElements(gl.TRIANGLES, sphere.indices.length, gl.UNSIGNED_SHORT, 0);
 
-            requestAnimationFrame(drawScene);
+            requestAnimationFrame(render);
         }
 
-        // Load gl-matrix library
-        const script = document.createElement('script');
-        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/2.8.1/gl-matrix-min.js';
-        script.onload = () => {
-            // Start animation
-            requestAnimationFrame(drawScene);
-        };
-        document.head.appendChild(script);
+        // Enable depth testing
+        gl.enable(gl.DEPTH_TEST);
+
+        // Start animation
+        requestAnimationFrame(render);
     </script>
 </body>
 </html> 
