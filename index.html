@@ -319,6 +319,21 @@
                 out[10] = a02 * s + a22 * c;
                 out[11] = a03 * s + a23 * c;
                 return out;
+            },
+            rotateX: (out, a, rad) => {
+                const s = Math.sin(rad);
+                const c = Math.cos(rad);
+                const a10 = a[4], a11 = a[5], a12 = a[6], a13 = a[7];
+                const a20 = a[8], a21 = a[9], a22 = a[10], a23 = a[11];
+                out[4] = a10 * c + a20 * s;
+                out[5] = a11 * c + a21 * s;
+                out[6] = a12 * c + a22 * s;
+                out[7] = a13 * c + a23 * s;
+                out[8] = a20 * c - a10 * s;
+                out[9] = a21 * c - a11 * s;
+                out[10] = a22 * c - a12 * s;
+                out[11] = a23 * c - a13 * s;
+                return out;
             }
         };
 
@@ -338,9 +353,16 @@
         const normalMatrix = mat3.create();
 
         // Animation variables
-        let angle = 0;
         const cameraDistance = 3.0;
-        const rotationSpeed = 10 * Math.PI / 180; // 10 degrees per second
+        // const rotationSpeed = 10 * Math.PI / 180; // 10 degrees per second (commented out)
+
+        // Mouse interaction state
+        let isDragging = false;
+        let lastMouseX = -1;
+        let lastMouseY = -1;
+        let cameraAngleX = 0;
+        let cameraAngleY = 0;
+        const rotationSensitivity = 0.005; // Adjust sensitivity as needed
 
         // Render function
         function render(timestamp) {
@@ -348,15 +370,17 @@
             gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
             // Update camera position
-            angle += rotationSpeed / 60; // Assuming 60 FPS
-            const cameraX = Math.sin(angle) * cameraDistance;
-            const cameraZ = Math.cos(angle) * cameraDistance;
+            // angle += rotationSpeed / 60; // Assuming 60 FPS
+            const cameraX = Math.sin(cameraAngleX) * cameraDistance;
+            const cameraZ = Math.cos(cameraAngleX) * cameraDistance;
 
             // Set up matrices
             mat4.perspective(projectionMatrix, 45 * Math.PI / 180, canvas.width / canvas.height, 0.1, 100.0);
             mat4.identity(modelViewMatrix);
             mat4.translate(modelViewMatrix, modelViewMatrix, [0, 0, -cameraDistance]);
-            mat4.rotateY(modelViewMatrix, modelViewMatrix, angle);
+            // Apply rotations based on mouse movement
+            mat4.rotateY(modelViewMatrix, modelViewMatrix, cameraAngleY); // Yaw
+            mat4.rotateX(modelViewMatrix, modelViewMatrix, cameraAngleX); // Pitch
             mat3.fromMat4(normalMatrix, modelViewMatrix);
 
             // Draw solid sphere
@@ -419,6 +443,40 @@
 
         // Start animation
         requestAnimationFrame(render);
+
+        // Add mouse event listeners
+        canvas.addEventListener('mousedown', (event) => {
+            if (event.button === 0) { // Left mouse button
+                isDragging = true;
+                lastMouseX = event.clientX;
+                lastMouseY = event.clientY;
+            }
+        });
+
+        canvas.addEventListener('mouseup', (event) => {
+            if (event.button === 0) { // Left mouse button
+                isDragging = false;
+            }
+        });
+
+        canvas.addEventListener('mousemove', (event) => {
+            if (!isDragging) return;
+
+            const deltaX = event.clientX - lastMouseX;
+            const deltaY = event.clientY - lastMouseY;
+
+            cameraAngleY += deltaX * rotationSensitivity;
+            cameraAngleX += deltaY * rotationSensitivity;
+
+            // Clamp pitch to avoid flipping
+            cameraAngleX = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, cameraAngleX));
+
+            lastMouseX = event.clientX;
+            lastMouseY = event.clientY;
+        });
+
+        // Prevent context menu on right-click drag (optional)
+        canvas.addEventListener('contextmenu', (event) => event.preventDefault());
     </script>
 </body>
 </html> 
