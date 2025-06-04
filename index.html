@@ -104,11 +104,11 @@
         void main() {
             // For flat shading, we can directly use the normal without normalization
             // since all vertices in a face have the exact same normal
-            vec3 normal = vNormal;
+            vec3 normal = vNormal; // Already normalized if coming from uNormalMatrix * aVertexNormal and aVertexNormal is unit
             vec3 lightDir = normalize(uLightDirection);
             
             float diffuse = max(dot(normal, lightDir), 0.0);
-            vec3 color = vec3(0.0, 1.0, 0.0); // Green color for sphere
+            vec3 color = vec3(0.2, 0.5, 0.8); // Changed from green to a blue color for bottle
             
             vec3 ambient = uAmbientColor * color;
             vec3 diffuseColor = uLightColor * color * diffuse;
@@ -235,49 +235,35 @@
             normalMatrix: gl.getUniformLocation(wireframeProgram, 'uNormalMatrix')
         };
 
+        // Function to calculate face normal (moved here to be globally accessible)
+        function calculateFaceNormal(v1, v2, v3) {
+            // Create vectors from vertices
+            const a = [v2[0] - v1[0], v2[1] - v1[1], v2[2] - v1[2]];
+            const b = [v3[0] - v1[0], v3[1] - v1[1], v3[2] - v1[2]];
+            
+            // Cross product
+            let normal = [ // Use 'let' if reassigning for flipping
+                a[1] * b[2] - a[2] * b[1],
+                a[2] * b[0] - a[0] * b[2],
+                a[0] * b[1] - a[1] * b[0]
+            ];
+            
+            // Normalize
+            const length = Math.sqrt(normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]);
+            if (length === 0) return [0,0,1]; // Should not happen for non-degenerate triangles
+
+            normal[0] /= length;
+            normal[1] /= length;
+            normal[2] /= length;
+            
+            return normal;
+        }
+
         // Create sphere geometry
         function createSphere(radius, segments) {
             const positions = [];
             const normals = [];
             const indices = [];
-
-            // Function to calculate face normal
-            function calculateFaceNormal(v1, v2, v3) {
-                // Create vectors from vertices
-                const a = [v2[0] - v1[0], v2[1] - v1[1], v2[2] - v1[2]];
-                const b = [v3[0] - v1[0], v3[1] - v1[1], v3[2] - v1[2]];
-                
-                // Cross product
-                const normal = [
-                    a[1] * b[2] - a[2] * b[1],
-                    a[2] * b[0] - a[0] * b[2],
-                    a[0] * b[1] - a[1] * b[0]
-                ];
-                
-                // Normalize
-                const length = Math.sqrt(normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]);
-                
-                // For a sphere, we can ensure the normal points outward by checking dot product with position
-                // This is specifically for a sphere centered at origin
-                const center = [0, 0, 0];
-                const toCenter = [
-                    center[0] - v1[0],
-                    center[1] - v1[1],
-                    center[2] - v1[2]
-                ];
-                
-                // Calculate dot product to check direction
-                const dot = normal[0] * toCenter[0] + normal[1] * toCenter[1] + normal[2] * toCenter[2];
-                
-                // If normal points inward (toward center), flip it
-                const sign = dot > 0 ? -1 : 1;
-                
-                return [
-                    sign * normal[0] / length,
-                    sign * normal[1] / length,
-                    sign * normal[2] / length
-                ];
-            }
 
             // First, generate vertices position data (temporary)
             const tempPositions = [];
@@ -337,19 +323,148 @@
             return { positions, normals, indices };
         }
 
+        function createBottle(profilePoints, numSegments) {
+            const positions = [];
+            const normals = [];
+            const indices = [];
+            let currentIndex = 0;
+
+            // Validate profile points
+            if (!profilePoints || profilePoints.length < 2) {
+                console.error("Bottle profile must have at least 2 points.");
+                return { positions, normals, indices };
+            }
+
+            const profileVertices = profilePoints.map(p => ({ x: p[0], y: p[1] }));
+
+            // Generate vertices by rotating the profile
+            const rings = [];
+            for (let i = 0; i <= numSegments; i++) {
+                const angle = (i / numSegments) * 2 * Math.PI;
+                const sinA = Math.sin(angle);
+                const cosA = Math.cos(angle);
+                const ring = [];
+                for (let j = 0; j < profileVertices.length; j++) {
+                    const p = profileVertices[j];
+                    ring.push([
+                        p.x * cosA, // x
+                        p.y,         // y
+                        p.x * sinA  // z
+                    ]);
+                }
+                rings.push(ring);
+            }
+
+            // Generate faces (sides of the bottle)
+            for (let i = 0; i < numSegments; i++) {
+                for (let j = 0; j < profileVertices.length - 1; j++) {
+                    const r1 = rings[i];
+                    const r2 = rings[i+1];
+
+                    // Define the 4 vertices of the quad for this segment
+                    const v1 = r1[j];
+                    const v2 = r2[j];
+                    const v3 = r1[j+1];
+                    const v4 = r2[j+1];
+
+                    // Triangle 1: (v1, v2, v3)
+                    let faceNormal1 = calculateFaceNormal(v1, v2, v3);
+                    positions.push(...v1, ...v2, ...v3);
+                    normals.push(...faceNormal1, ...faceNormal1, ...faceNormal1);
+                    indices.push(currentIndex, currentIndex + 1, currentIndex + 2);
+                    currentIndex += 3;
+
+                    // Triangle 2: (v3, v2, v4) - careful with winding
+                    let faceNormal2 = calculateFaceNormal(v3, v2, v4);
+                    positions.push(...v3, ...v2, ...v4);
+                    normals.push(...faceNormal2, ...faceNormal2, ...faceNormal2);
+                    indices.push(currentIndex, currentIndex + 1, currentIndex + 2);
+                    currentIndex += 3;
+                }
+            }
+
+            // Create bottom cap (fan of triangles from the first profile point)
+            const bottomCenter = [0, profileVertices[0].y, 0];
+            if (profileVertices[0].x > 0.001) { // Only create cap if base is not a point
+                for (let i = 0; i < numSegments; i++) {
+                    const v1 = rings[i][0];
+                    const v2 = rings[i+1][0];
+                    // Ensure bottom center is distinct for normal calculation if needed,
+                    // but for flat shading, use the triangle points.
+                    let faceNormal = calculateFaceNormal(v2, v1, bottomCenter); // Winding order for outward normal
+                    positions.push(...v2, ...v1, ...bottomCenter);
+                    normals.push(...faceNormal, ...faceNormal, ...faceNormal);
+                    indices.push(currentIndex, currentIndex + 1, currentIndex + 2);
+                    currentIndex += 3;
+                }
+            }
+            
+            // Create top cap (fan of triangles from the last profile point)
+            // Optional: if bottle neck is open, this might not be desired or be different.
+            const topProfilePoint = profileVertices[profileVertices.length - 1];
+            const topCenter = [0, topProfilePoint.y, 0];
+            if (topProfilePoint.x > 0.001) { // Only create cap if top is not a point
+                 for (let i = 0; i < numSegments; i++) {
+                    const v1 = rings[i][profileVertices.length - 1];
+                    const v2 = rings[i+1][profileVertices.length - 1];
+                    let faceNormal = calculateFaceNormal(v1, v2, topCenter); // Winding order for outward normal
+                    positions.push(...v1, ...v2, ...topCenter);
+                    normals.push(...faceNormal, ...faceNormal, ...faceNormal);
+                    indices.push(currentIndex, currentIndex + 1, currentIndex + 2);
+                    currentIndex += 3;
+                }
+            }
+
+            return { positions, normals, indices };
+        }
+
         // Create buffers
-        const sphere = createSphere(1.0, 10); // Lowered segments from 12 to 6
+        // const sphere = createSphere(1.0, 10); // Lowered segments from 12 to 6
+
+        // Define a profile for the bottle (half cross-section, from bottom to top)
+        // Format: [radius, height]
+        const bottleProfile = [
+            [0.4, -0.8], // Base bottom outer
+            [0.5, -0.7], // Base wide part
+            [0.5, 0.0],  // Main body cylinder part
+            [0.45, 0.3], // Shoulder curve in
+            [0.2, 0.5],  // Neck starts
+            [0.2, 0.8],  // Neck ends
+            [0.25, 0.9], // Lip outer
+            [0.23, 0.9] // Lip inner edge (for thickness, not used if capping directly)
+                       // If we want an open neck, the last point's x should be > 0
+                       // If we want a closed top, the last point x could be 0 or handled by capping
+        ];
+        // Simpler profile for a closed top bottle
+         const simpleBottleProfile = [
+            [0.0, -0.8], // Bottom center
+            [0.5, -0.7], // Base
+            [0.5, 0.0],  // Body
+            [0.4, 0.4],  // Shoulder
+            [0.15, 0.7], // Neck
+            [0.0, 0.9]   // Top center (pointed)
+        ];
+        // Even simpler for testing:
+        const testProfile = [
+            [0.0, -0.5], // Bottom center
+            [0.5, -0.5], // Bottom edge
+            [0.5, 0.5],  // Top edge
+            [0.0, 0.5]   // Top center
+        ];
+
+        const bottle = createBottle(bottleProfile, 20); // 20 segments for rotation
+
         const positionBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(sphere.positions), gl.STATIC_DRAW);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(bottle.positions), gl.STATIC_DRAW);
 
         const normalBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(sphere.normals), gl.STATIC_DRAW);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(bottle.normals), gl.STATIC_DRAW);
 
         const indexBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
-        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(sphere.indices), gl.STATIC_DRAW);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(bottle.indices), gl.STATIC_DRAW);
 
         // Matrix operations
         const mat4 = {
@@ -548,7 +663,7 @@
 
                 // Draw solid sphere
                 gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
-                gl.drawElements(gl.TRIANGLES, sphere.indices.length, gl.UNSIGNED_SHORT, 0);
+                gl.drawElements(gl.TRIANGLES, bottle.indices.length, gl.UNSIGNED_SHORT, 0);
 
                 // Draw wireframe
                 gl.useProgram(wireframeProgram);
@@ -573,7 +688,7 @@
 
                 // Draw wireframe
                 gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
-                gl.drawElements(gl.LINE_LOOP, sphere.indices.length, gl.UNSIGNED_SHORT, 0);
+                gl.drawElements(gl.LINE_LOOP, bottle.indices.length, gl.UNSIGNED_SHORT, 0);
 
                 // Disable polygon offset
                 gl.disable(gl.POLYGON_OFFSET_FILL);
