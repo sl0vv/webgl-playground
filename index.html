@@ -29,6 +29,43 @@
         button:hover {
             background: rgba(255, 255, 255, 1);
         }
+        .profile-editor {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(50, 50, 50, 0.8);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 100;
+            max-height: 300px;
+            overflow-y: auto;
+            width: 250px;
+        }
+        .profile-editor h4 {
+            margin-top: 0;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+        .point-entry {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            margin-bottom: 10px;
+            padding: 5px;
+            border: 1px solid #444;
+            border-radius: 3px;
+        }
+        .point-entry label {
+            font-size: 12px;
+        }
+        .point-entry input[type="range"] {
+            width: 100%;
+        }
+        .point-values {
+            font-size: 12px;
+            text-align: right;
+        }
     </style>
 </head>
 <body>
@@ -46,6 +83,14 @@
             <button id="rotateUp">Rotate Up</button>
             <button id="rotateDown">Rotate Down</button>
         </div>
+    </div>
+
+    <div id="profileEditor" class="profile-editor">
+        <h4>Bottle Profile</h4>
+        <div id="pointsList">
+            <!-- Point entries will be added here -->
+        </div>
+        <button id="addPointButton" style="width: 100%; margin-top: 10px;">Add Point</button>
     </div>
 
     <div id="fpsDisplay" style="position: fixed; top: 10px; left: 10px; color: white; background-color: rgba(0,0,0,0.5); padding: 5px;">FPS: 0</div>
@@ -108,7 +153,7 @@
             vec3 lightDir = normalize(uLightDirection);
             
             float diffuse = max(dot(normal, lightDir), 0.0);
-            vec3 color = vec3(0.2, 0.5, 0.8); // Changed from green to a blue color for bottle
+            vec3 color = vec3(0.0, 1.0, 0.0); // Changed from green to a blue color for bottle
             
             vec3 ambient = uAmbientColor * color;
             vec3 diffuseColor = uLightColor * color * diffuse;
@@ -361,25 +406,46 @@
                     const r1 = rings[i];
                     const r2 = rings[i+1];
 
-                    // Define the 4 vertices of the quad for this segment
-                    const v1 = r1[j];
-                    const v2 = r2[j];
-                    const v3 = r1[j+1];
-                    const v4 = r2[j+1];
+                    const p_curr = profileVertices[j];
+                    const p_next = profileVertices[j+1];
 
-                    // Triangle 1: (v1, v2, v3)
-                    let faceNormal1 = calculateFaceNormal(v1, v2, v3);
-                    positions.push(...v1, ...v2, ...v3);
-                    normals.push(...faceNormal1, ...faceNormal1, ...faceNormal1);
-                    indices.push(currentIndex, currentIndex + 1, currentIndex + 2);
-                    currentIndex += 3;
+                    const v1 = r1[j]; // Current profile point on ring i
+                    const v2 = r2[j]; // Current profile point on ring i+1
+                    const v3 = r1[j+1]; // Next profile point on ring i
+                    const v4 = r2[j+1]; // Next profile point on ring i+1
 
-                    // Triangle 2: (v3, v2, v4) - careful with winding
-                    let faceNormal2 = calculateFaceNormal(v3, v2, v4);
-                    positions.push(...v3, ...v2, ...v4);
-                    normals.push(...faceNormal2, ...faceNormal2, ...faceNormal2);
-                    indices.push(currentIndex, currentIndex + 1, currentIndex + 2);
-                    currentIndex += 3;
+                    if (Math.abs(p_next.x) < 0.001) { // Next point is on axis
+                        const axisPointNext = [0, p_next.y, 0]; 
+                        // Triangle: (v1, v2, axisPointNext) - fanning into the axis
+                        let faceNormal = calculateFaceNormal(v1, v2, axisPointNext);
+                        positions.push(...v1, ...v2, ...axisPointNext);
+                        normals.push(...faceNormal, ...faceNormal, ...faceNormal);
+                        indices.push(currentIndex, currentIndex + 1, currentIndex + 2);
+                        currentIndex += 3;
+                    } else if (Math.abs(p_curr.x) < 0.001) { // Current point is on axis
+                        const axisPointCurr = [0, p_curr.y, 0];
+                        // Triangle: (v4, v3, axisPointCurr) - fanning out from the axis
+                        // (Order v4, v3, axisPointCurr to maintain outward normal with (v3-v4)x(axisPointCurr-v4))
+                        let faceNormal = calculateFaceNormal(v4, v3, axisPointCurr);
+                        positions.push(...v4, ...v3, ...axisPointCurr);
+                        normals.push(...faceNormal, ...faceNormal, ...faceNormal);
+                        indices.push(currentIndex, currentIndex + 1, currentIndex + 2);
+                        currentIndex += 3;
+                    } else { // Standard quad
+                        // Triangle 1: (v1, v2, v3)
+                        let faceNormal1 = calculateFaceNormal(v1, v2, v3);
+                        positions.push(...v1, ...v2, ...v3);
+                        normals.push(...faceNormal1, ...faceNormal1, ...faceNormal1);
+                        indices.push(currentIndex, currentIndex + 1, currentIndex + 2);
+                        currentIndex += 3;
+
+                        // Triangle 2: (v3, v2, v4)
+                        let faceNormal2 = calculateFaceNormal(v3, v2, v4);
+                        positions.push(...v3, ...v2, ...v4);
+                        normals.push(...faceNormal2, ...faceNormal2, ...faceNormal2);
+                        indices.push(currentIndex, currentIndex + 1, currentIndex + 2);
+                        currentIndex += 3;
+                    }
                 }
             }
 
@@ -452,7 +518,7 @@
             [0.0, 0.5]   // Top center
         ];
 
-        const bottle = createBottle(bottleProfile, 20); // 20 segments for rotation
+        const bottle = createBottle(bottleProfile, 10);
 
         const positionBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
@@ -465,6 +531,86 @@
         const indexBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
         gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(bottle.indices), gl.STATIC_DRAW);
+
+        // Function to update bottle geometry and buffers
+        function updateBottleGeometry(profile) {
+            const newBottleData = createBottle(profile, 10); // Use 10 segments for now
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(newBottleData.positions), gl.STATIC_DRAW);
+
+            gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(newBottleData.normals), gl.STATIC_DRAW);
+
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+            gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(newBottleData.indices), gl.STATIC_DRAW);
+            
+            // Store the indices length for rendering
+            currentBottleIndicesLength = newBottleData.indices.length;
+        }
+        let currentBottleIndicesLength = bottle.indices.length; // Initialize
+
+        // Profile Editor Logic
+        const pointsListDiv = document.getElementById('pointsList');
+        const addPointButton = document.getElementById('addPointButton');
+        let currentProfilePoints = JSON.parse(JSON.stringify(bottleProfile)); // Deep copy
+
+        function renderProfileEditor() {
+            pointsListDiv.innerHTML = ''; // Clear existing points
+            currentProfilePoints.forEach((point, index) => {
+                const pointEntryDiv = document.createElement('div');
+                pointEntryDiv.className = 'point-entry';
+
+                const xLabel = document.createElement('label');
+                xLabel.textContent = `Point ${index + 1} X: `;
+                const xSlider = document.createElement('input');
+                xSlider.type = 'range';
+                xSlider.min = -1;
+                xSlider.max = 1;
+                xSlider.step = 0.01;
+                xSlider.value = point[0];
+                const xValueSpan = document.createElement('span');
+                xValueSpan.className = 'point-values';
+                xValueSpan.textContent = `(${point[0].toFixed(2)}, ${point[1].toFixed(2)})`;
+
+                const yLabel = document.createElement('label');
+                yLabel.textContent = `Point ${index + 1} Y: `;
+                const ySlider = document.createElement('input');
+                ySlider.type = 'range';
+                ySlider.min = -1;
+                ySlider.max = 1;
+                ySlider.step = 0.01;
+                ySlider.value = point[1];
+
+                xSlider.addEventListener('input', () => {
+                    currentProfilePoints[index][0] = parseFloat(xSlider.value);
+                    xValueSpan.textContent = `(${parseFloat(xSlider.value).toFixed(2)}, ${parseFloat(ySlider.value).toFixed(2)})`;
+                    updateBottleGeometry(currentProfilePoints);
+                });
+
+                ySlider.addEventListener('input', () => {
+                    currentProfilePoints[index][1] = parseFloat(ySlider.value);
+                    xValueSpan.textContent = `(${parseFloat(xSlider.value).toFixed(2)}, ${parseFloat(ySlider.value).toFixed(2)})`;
+                    updateBottleGeometry(currentProfilePoints);
+                });
+                
+                pointEntryDiv.appendChild(xLabel);
+                pointEntryDiv.appendChild(xSlider);
+                pointEntryDiv.appendChild(yLabel);
+                pointEntryDiv.appendChild(ySlider);
+                pointEntryDiv.appendChild(xValueSpan); 
+                pointsListDiv.appendChild(pointEntryDiv);
+            });
+        }
+
+        addPointButton.addEventListener('click', () => {
+            currentProfilePoints.push([0.0, 0.0]); // Add a new point at (0,0)
+            renderProfileEditor();
+            updateBottleGeometry(currentProfilePoints);
+        });
+
+        // Initial render of the profile editor
+        renderProfileEditor();
 
         // Matrix operations
         const mat4 = {
@@ -663,7 +809,7 @@
 
                 // Draw solid sphere
                 gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
-                gl.drawElements(gl.TRIANGLES, bottle.indices.length, gl.UNSIGNED_SHORT, 0);
+                gl.drawElements(gl.TRIANGLES, currentBottleIndicesLength, gl.UNSIGNED_SHORT, 0);
 
                 // Draw wireframe
                 gl.useProgram(wireframeProgram);
@@ -688,7 +834,20 @@
 
                 // Draw wireframe
                 gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
-                gl.drawElements(gl.LINE_LOOP, bottle.indices.length, gl.UNSIGNED_SHORT, 0);
+                // gl.drawElements(gl.LINE_LOOP, bottle.indices.length, gl.UNSIGNED_SHORT, 0); // Old problematic line
+
+                // New approach: Draw LINE_LOOP for each triangle
+                const numIndices = currentBottleIndicesLength;
+                if (numIndices % 3 === 0) { // Ensure we have complete triangles
+                    for (let i = 0; i < numIndices; i += 3) {
+                        // For each triangle (3 indices), draw its outline.
+                        // The offset is i * 2 because UNSIGNED_SHORT is 2 bytes.
+                        gl.drawElements(gl.LINE_LOOP, 3, gl.UNSIGNED_SHORT, i * Uint16Array.BYTES_PER_ELEMENT);
+                    }
+                } else {
+                    console.warn("Wireframe rendering: bottle.indices.length is not a multiple of 3.");
+                    // Fallback or skip drawing wireframe if indices are not as expected
+                }
 
                 // Disable polygon offset
                 gl.disable(gl.POLYGON_OFFSET_FILL);
