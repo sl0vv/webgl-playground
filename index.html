@@ -5,10 +5,50 @@
     <style>
         body { margin: 0; overflow: hidden; }
         canvas { display: block; }
+        .controls {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            display: flex;
+            gap: 10px;
+            z-index: 100;
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        button {
+            padding: 8px 12px;
+            background: rgba(255, 255, 255, 0.8);
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover {
+            background: rgba(255, 255, 255, 1);
+        }
     </style>
 </head>
 <body>
     <canvas id="glCanvas"></canvas>
+    <div class="controls">
+        <div class="control-group">
+            <button id="zoomIn">Zoom In</button>
+            <button id="zoomOut">Zoom Out</button>
+        </div>
+        <div class="control-group">
+            <button id="rotateLeft">Rotate Left</button>
+            <button id="rotateRight">Rotate Right</button>
+        </div>
+        <div class="control-group">
+            <button id="rotateUp">Rotate Up</button>
+            <button id="rotateDown">Rotate Down</button>
+        </div>
+    </div>
+
+    <div id="fpsDisplay" style="position: fixed; top: 10px; left: 10px; color: white; background-color: rgba(0,0,0,0.5); padding: 5px;">FPS: 0</div>
 
     <!-- Vertex Shader -->
     <script id="vertexShader" type="x-shader/x-vertex">
@@ -116,6 +156,7 @@
         // WebGL context
         const canvas = document.getElementById('glCanvas');
         const gl = canvas.getContext('webgl');
+        const fpsDisplay = document.getElementById('fpsDisplay'); // Get the FPS display element
         
         if (!gl) {
             alert('WebGL not supported');
@@ -399,8 +440,9 @@
         const normalMatrix = mat3.create();
 
         // Animation variables
-        const cameraDistance = 3.0;
-        // const rotationSpeed = 10 * Math.PI / 180; // 10 degrees per second (commented out)
+        let cameraDistance = 3.0;
+        const rotationSpeed = 0.2; // Doubled from 0.1
+        const zoomSpeed = 0.4; // Doubled from 0.2
 
         // Mouse interaction state
         let isDragging = false;
@@ -410,78 +452,133 @@
         let cameraAngleY = 0;
         const rotationSensitivity = 0.005; // Adjust sensitivity as needed
 
+        // FPS calculation variables & Frame rate control
+        let frameCount = 0;
+        let fpsLastTime = performance.now() / 1000; // For FPS display updates
+
+        const targetFPS = 20;
+        const fpsInterval = 1000 / targetFPS;
+        let then = performance.now();
+
+        // Add button event listeners
+        document.getElementById('zoomIn').addEventListener('click', () => {
+            cameraDistance = Math.max(1.0, cameraDistance - zoomSpeed);
+        });
+
+        document.getElementById('zoomOut').addEventListener('click', () => {
+            cameraDistance = Math.min(10.0, cameraDistance + zoomSpeed);
+        });
+
+        document.getElementById('rotateLeft').addEventListener('click', () => {
+            cameraAngleY += rotationSpeed;
+        });
+
+        document.getElementById('rotateRight').addEventListener('click', () => {
+            cameraAngleY -= rotationSpeed;
+        });
+
+        document.getElementById('rotateUp').addEventListener('click', () => {
+            cameraAngleX = Math.min(Math.PI/2 - 0.1, cameraAngleX + rotationSpeed);
+        });
+
+        document.getElementById('rotateDown').addEventListener('click', () => {
+            cameraAngleX = Math.max(-Math.PI/2 + 0.1, cameraAngleX - rotationSpeed);
+        });
+
         // Render function
-        function render(timestamp) {
-            gl.clearColor(0.0, 0.0, 1.0, 1.0); // Blue background
-            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+        function render(now) {
+            requestAnimationFrame(render); // Schedule the next frame immediately
 
-            // Update camera position
-            // angle += rotationSpeed / 60; // Assuming 60 FPS
-            const cameraX = Math.sin(cameraAngleX) * cameraDistance;
-            const cameraZ = Math.cos(cameraAngleX) * cameraDistance;
+            const elapsed = now - then;
 
-            // Set up matrices
-            mat4.perspective(projectionMatrix, 45 * Math.PI / 180, canvas.width / canvas.height, 0.1, 100.0);
-            mat4.identity(modelViewMatrix);
-            mat4.translate(modelViewMatrix, modelViewMatrix, [0, 0, -cameraDistance]);
-            // Apply rotations based on mouse movement
-            mat4.rotateY(modelViewMatrix, modelViewMatrix, cameraAngleY); // Yaw
-            mat4.rotateX(modelViewMatrix, modelViewMatrix, cameraAngleX); // Pitch
-            mat3.fromMat4(normalMatrix, modelViewMatrix);
+            // if enough time has elapsed, draw the next frame
+            if (elapsed > fpsInterval) {
+                // Get ready for next frame by setting then=now, but also, adjust for your
+                // specified fpsInterval not being a multiple of RAF's interval.
+                then = now - (elapsed % fpsInterval);
 
-            // Draw solid sphere
-            gl.useProgram(shaderProgram);
+                // --- Start of actual rendering logic ---
+                gl.clearColor(0.0, 0.0, 1.0, 1.0); // Blue background
+                gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-            // Set uniforms
-            gl.uniformMatrix4fv(uniformLocations.projectionMatrix, false, projectionMatrix);
-            gl.uniformMatrix4fv(uniformLocations.modelViewMatrix, false, modelViewMatrix);
-            gl.uniformMatrix3fv(uniformLocations.normalMatrix, false, normalMatrix);
-            gl.uniform3fv(uniformLocations.lightDirection, [1.0, 2.0, 1.0]);
-            gl.uniform3fv(uniformLocations.lightColor, [1.0, 1.0, 1.0]);
-            gl.uniform3fv(uniformLocations.ambientColor, [0.1, 0.1, 0.1]);
+                // Calculate FPS
+                frameCount++;
+                const currentTimeForFPS = now / 1000; // Convert to seconds (using 'now' from rAF)
+                const deltaTimeForFPS = currentTimeForFPS - fpsLastTime;
 
-            // Set up attributes
-            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-            gl.vertexAttribPointer(attribLocations.vertexPosition, 3, gl.FLOAT, false, 0, 0);
-            gl.enableVertexAttribArray(attribLocations.vertexPosition);
+                if (deltaTimeForFPS >= 1.0) { // Update FPS display every second
+                    const fps = frameCount / deltaTimeForFPS;
+                    fpsDisplay.textContent = `FPS: ${fps.toFixed(2)}`;
+                    frameCount = 0;
+                    fpsLastTime = currentTimeForFPS;
+                }
 
-            gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer);
-            gl.vertexAttribPointer(attribLocations.vertexNormal, 3, gl.FLOAT, false, 0, 0);
-            gl.enableVertexAttribArray(attribLocations.vertexNormal);
+                // Update camera position
+                const cameraX = Math.sin(cameraAngleX) * cameraDistance;
+                const cameraZ = Math.cos(cameraAngleX) * cameraDistance;
 
-            // Draw solid sphere
-            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
-            gl.drawElements(gl.TRIANGLES, sphere.indices.length, gl.UNSIGNED_SHORT, 0);
+                // Set up matrices
+                mat4.perspective(projectionMatrix, 45 * Math.PI / 180, canvas.width / canvas.height, 0.1, 100.0);
+                mat4.identity(modelViewMatrix);
+                mat4.translate(modelViewMatrix, modelViewMatrix, [0, 0, -cameraDistance]);
+                // Apply rotations based on mouse movement
+                mat4.rotateY(modelViewMatrix, modelViewMatrix, cameraAngleY); // Yaw
+                mat4.rotateX(modelViewMatrix, modelViewMatrix, cameraAngleX); // Pitch
+                mat3.fromMat4(normalMatrix, modelViewMatrix);
 
-            // Draw wireframe
-            gl.useProgram(wireframeProgram);
+                // Draw solid sphere
+                gl.useProgram(shaderProgram);
 
-            // Set uniforms for wireframe
-            gl.uniformMatrix4fv(wireframeUniformLocations.projectionMatrix, false, projectionMatrix);
-            gl.uniformMatrix4fv(wireframeUniformLocations.modelViewMatrix, false, modelViewMatrix);
-            gl.uniformMatrix3fv(wireframeUniformLocations.normalMatrix, false, normalMatrix);
+                // Set uniforms
+                gl.uniformMatrix4fv(uniformLocations.projectionMatrix, false, projectionMatrix);
+                gl.uniformMatrix4fv(uniformLocations.modelViewMatrix, false, modelViewMatrix);
+                gl.uniformMatrix3fv(uniformLocations.normalMatrix, false, normalMatrix);
+                gl.uniform3fv(uniformLocations.lightDirection, [1.0, 2.0, 1.0]);
+                gl.uniform3fv(uniformLocations.lightColor, [1.0, 1.0, 1.0]);
+                gl.uniform3fv(uniformLocations.ambientColor, [0.1, 0.1, 0.1]);
 
-            // Set up attributes for wireframe
-            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-            gl.vertexAttribPointer(wireframeAttribLocations.vertexPosition, 3, gl.FLOAT, false, 0, 0);
-            gl.enableVertexAttribArray(wireframeAttribLocations.vertexPosition);
+                // Set up attributes
+                gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+                gl.vertexAttribPointer(attribLocations.vertexPosition, 3, gl.FLOAT, false, 0, 0);
+                gl.enableVertexAttribArray(attribLocations.vertexPosition);
 
-            gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer);
-            gl.vertexAttribPointer(wireframeAttribLocations.vertexNormal, 3, gl.FLOAT, false, 0, 0);
-            gl.enableVertexAttribArray(wireframeAttribLocations.vertexNormal);
+                gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer);
+                gl.vertexAttribPointer(attribLocations.vertexNormal, 3, gl.FLOAT, false, 0, 0);
+                gl.enableVertexAttribArray(attribLocations.vertexNormal);
 
-            // Enable polygon offset to prevent z-fighting
-            gl.enable(gl.POLYGON_OFFSET_FILL);
-            gl.polygonOffset(1.0, 1.0);
+                // Draw solid sphere
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+                gl.drawElements(gl.TRIANGLES, sphere.indices.length, gl.UNSIGNED_SHORT, 0);
 
-            // Draw wireframe
-            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
-            gl.drawElements(gl.LINE_LOOP, sphere.indices.length, gl.UNSIGNED_SHORT, 0);
+                // Draw wireframe
+                gl.useProgram(wireframeProgram);
 
-            // Disable polygon offset
-            gl.disable(gl.POLYGON_OFFSET_FILL);
+                // Set uniforms for wireframe
+                gl.uniformMatrix4fv(wireframeUniformLocations.projectionMatrix, false, projectionMatrix);
+                gl.uniformMatrix4fv(wireframeUniformLocations.modelViewMatrix, false, modelViewMatrix);
+                gl.uniformMatrix3fv(wireframeUniformLocations.normalMatrix, false, normalMatrix);
 
-            requestAnimationFrame(render);
+                // Set up attributes for wireframe
+                gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+                gl.vertexAttribPointer(wireframeAttribLocations.vertexPosition, 3, gl.FLOAT, false, 0, 0);
+                gl.enableVertexAttribArray(wireframeAttribLocations.vertexPosition);
+
+                gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer);
+                gl.vertexAttribPointer(wireframeAttribLocations.vertexNormal, 3, gl.FLOAT, false, 0, 0);
+                gl.enableVertexAttribArray(wireframeAttribLocations.vertexNormal);
+
+                // Enable polygon offset to prevent z-fighting
+                gl.enable(gl.POLYGON_OFFSET_FILL);
+                gl.polygonOffset(1.0, 1.0);
+
+                // Draw wireframe
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+                gl.drawElements(gl.LINE_LOOP, sphere.indices.length, gl.UNSIGNED_SHORT, 0);
+
+                // Disable polygon offset
+                gl.disable(gl.POLYGON_OFFSET_FILL);
+                // --- End of actual rendering logic ---
+            }
         }
 
         // Enable depth testing
