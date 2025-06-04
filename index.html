@@ -31,7 +31,7 @@
         }
         .profile-editor {
             position: fixed;
-            bottom: 20px;
+            top: 20px;
             right: 20px;
             background: rgba(50, 50, 50, 0.8);
             color: white;
@@ -40,7 +40,7 @@
             z-index: 100;
             max-height: 300px;
             overflow-y: auto;
-            width: 250px;
+            width: 375px;
         }
         .profile-editor h4 {
             margin-top: 0;
@@ -90,7 +90,6 @@
         <div id="pointsList">
             <!-- Point entries will be added here -->
         </div>
-        <button id="addPointButton" style="width: 100%; margin-top: 10px;">Add Point</button>
     </div>
 
     <div id="fpsDisplay" style="position: fixed; top: 10px; left: 10px; color: white; background-color: rgba(0,0,0,0.5); padding: 5px;">FPS: 0</div>
@@ -108,7 +107,7 @@
         varying vec3 vPosition;
 
         // PS1-style vertex snapping parameters
-        const float snapFactor = 50.0; // Increased from 20.0 to reduce jitter
+        const float snapFactor = 70.0; // Increased from 20.0 to reduce jitter
         
         void main() {
             // For flat shading, just pass the normal directly without any interpolation
@@ -490,32 +489,22 @@
         // Define a profile for the bottle (half cross-section, from bottom to top)
         // Format: [radius, height]
         const bottleProfile = [
-            [0.4, -0.8], // Base bottom outer
-            [0.5, -0.7], // Base wide part
-            [0.5, 0.0],  // Main body cylinder part
-            [0.45, 0.3], // Shoulder curve in
-            [0.2, 0.5],  // Neck starts
-            [0.2, 0.8],  // Neck ends
-            [0.25, 0.9], // Lip outer
-            [0.23, 0.9] // Lip inner edge (for thickness, not used if capping directly)
-                       // If we want an open neck, the last point's x should be > 0
-                       // If we want a closed top, the last point x could be 0 or handled by capping
-        ];
-        // Simpler profile for a closed top bottle
-         const simpleBottleProfile = [
-            [0.0, -0.8], // Bottom center
-            [0.5, -0.7], // Base
-            [0.5, 0.0],  // Body
-            [0.4, 0.4],  // Shoulder
-            [0.15, 0.7], // Neck
-            [0.0, 0.9]   // Top center (pointed)
-        ];
-        // Even simpler for testing:
-        const testProfile = [
-            [0.0, -0.5], // Bottom center
-            [0.5, -0.5], // Bottom edge
-            [0.5, 0.5],  // Top edge
-            [0.0, 0.5]   // Top center
+            [0.28, -1],
+            [0.32, -0.9],
+            [0.32, -0.82],
+            [0.28, -0.65],
+            [0.28, -0.51],
+            [0.31, -0.14],
+            [0.31, 0.01],
+            [0.29, 0.22],
+            [0.24, 0.41],
+            [0.16, 0.59],
+            [0.14, 0.73],
+            [0.14, 0.88],
+            [0.15, 0.89],
+            [0.14, 0.96],
+            [0.16, 0.96],
+            [0.15, 1]
         ];
 
         const bottle = createBottle(bottleProfile, 10);
@@ -552,7 +541,6 @@
 
         // Profile Editor Logic
         const pointsListDiv = document.getElementById('pointsList');
-        const addPointButton = document.getElementById('addPointButton');
         let currentProfilePoints = JSON.parse(JSON.stringify(bottleProfile)); // Deep copy
 
         function renderProfileEditor() {
@@ -593,21 +581,62 @@
                     xValueSpan.textContent = `(${parseFloat(xSlider.value).toFixed(2)}, ${parseFloat(ySlider.value).toFixed(2)})`;
                     updateBottleGeometry(currentProfilePoints);
                 });
+
+                const addButton = document.createElement('button');
+                addButton.textContent = 'Add After';
+                addButton.style.fontSize = '10px';
+                addButton.style.padding = '2px 4px';
+                addButton.addEventListener('click', () => {
+                    const currentPoint = currentProfilePoints[index];
+                    let newPointCoords;
+
+                    if (index < currentProfilePoints.length - 1) { // If there is a next point
+                        const nextPoint = currentProfilePoints[index + 1];
+                        newPointCoords = [
+                            (currentPoint[0] + nextPoint[0]) / 2,
+                            (currentPoint[1] + nextPoint[1]) / 2
+                        ];
+                    } else { // If it's the last point
+                        newPointCoords = [currentPoint[0], currentPoint[1]]; // New point duplicates current
+                        // currentProfilePoints will be updated after splice, original currentPoint is at 'index'
+                        // The new point will be added at index + 1
+                        // We need to check if there was a point *before* the original current point
+                        if (index > 0) {
+                             const prevPoint = currentProfilePoints[index -1];
+                             // Update the original current point (which is about to have newPointCoords inserted after it)
+                             // to be the median of prevPoint and newPointCoords
+                             currentProfilePoints[index][0] = (prevPoint[0] + newPointCoords[0]) / 2;
+                             currentProfilePoints[index][1] = (prevPoint[1] + newPointCoords[1]) / 2;
+                        }
+                        // If index is 0 (it was the only point), currentPoint remains as is, newPoint is a duplicate.
+                    }
+                    currentProfilePoints.splice(index + 1, 0, newPointCoords);
+                    renderProfileEditor();
+                    updateBottleGeometry(currentProfilePoints);
+                });
+
+                const removeButton = document.createElement('button');
+                removeButton.textContent = 'Remove';
+                removeButton.style.fontSize = '10px';
+                removeButton.style.padding = '2px 4px';
+                removeButton.addEventListener('click', () => {
+                    if (currentProfilePoints.length > 0) { // Allow removing to 0 points
+                        currentProfilePoints.splice(index, 1);
+                        renderProfileEditor();
+                        updateBottleGeometry(currentProfilePoints);
+                    }
+                });
                 
                 pointEntryDiv.appendChild(xLabel);
                 pointEntryDiv.appendChild(xSlider);
                 pointEntryDiv.appendChild(yLabel);
                 pointEntryDiv.appendChild(ySlider);
-                pointEntryDiv.appendChild(xValueSpan); 
+                pointEntryDiv.appendChild(xValueSpan);
+                pointEntryDiv.appendChild(addButton);
+                pointEntryDiv.appendChild(removeButton);
                 pointsListDiv.appendChild(pointEntryDiv);
             });
         }
-
-        addPointButton.addEventListener('click', () => {
-            currentProfilePoints.push([0.0, 0.0]); // Add a new point at (0,0)
-            renderProfileEditor();
-            updateBottleGeometry(currentProfilePoints);
-        });
 
         // Initial render of the profile editor
         renderProfileEditor();
@@ -703,7 +732,7 @@
         // Animation variables
         let cameraDistance = 3.0;
         const rotationSpeed = 0.2; // Doubled from 0.1
-        const zoomSpeed = 0.4; // Doubled from 0.2
+        const zoomSpeed = 0.2; // Doubled from 0.2
 
         // Mouse interaction state
         let isDragging = false;
@@ -796,7 +825,7 @@
                 gl.uniformMatrix3fv(uniformLocations.normalMatrix, false, normalMatrix);
                 gl.uniform3fv(uniformLocations.lightDirection, [1.0, 2.0, 1.0]);
                 gl.uniform3fv(uniformLocations.lightColor, [1.0, 1.0, 1.0]);
-                gl.uniform3fv(uniformLocations.ambientColor, [0.1, 0.1, 0.1]);
+                gl.uniform3fv(uniformLocations.ambientColor, [0.3, 0.3, 0.3]);
 
                 // Set up attributes
                 gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
