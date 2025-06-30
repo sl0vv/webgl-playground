@@ -5,5 +5,4 @@ alwaysApply: true
 ---
 This is a demo application to showcase WebGL technology in browser
 
-All changes shold be made in index.html, unless requested otherwise
-AVOID adding comments which are describing obvious things
+AVOID adding comments describing 'what' instad of 'why'
