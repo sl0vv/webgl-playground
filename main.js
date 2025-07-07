@@ -26,7 +26,7 @@ function compileShader(source, type) {
     const shader = gl.createShader(type);
     gl.shaderSource(shader, source);
     gl.compileShader(shader);
-    
+
     if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
         console.error('Shader compilation error:', gl.getShaderInfoLog(shader));
         gl.deleteShader(shader);
@@ -111,7 +111,7 @@ function setupTexture(gl) {
     gl.bindTexture(gl.TEXTURE_2D, texture);
 
     const image = document.getElementById('textureImage');
-    
+
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
 
@@ -211,7 +211,7 @@ function render(now) {
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
     gl.useProgram(shaderProgram);
-    
+
     // Set camera and projection parameters as vec4 uniforms
     gl.uniform4fv(uniformLocations.cameraParams, [cameraAngleX, cameraAngleY, cameraDistance, 0.0]);
     const fov = 45 * Math.PI / 180;
@@ -285,7 +285,9 @@ function render(now) {
 gl.enable(gl.DEPTH_TEST);
 
 // Start animation
-requestAnimationFrame(render);
+window.onload = () => {
+	requestAnimationFrame(render);
+}
 
 // Add mouse event listeners
 canvas.addEventListener('mousedown', (event) => {
